@@ -1,6 +1,8 @@
-version: 2 # use CircleCI 2.0
+version: 2.1 # use CircleCI 2.0
+orbs:
+  win: circleci/windows@1.0.0
 jobs: # A basic unit of work in a run
-  build: # runs not using Workflows must have a `build` job as entry point 
+  SetUp-Python: # runs not using Workflows must have a `build` job as entry point 
     # directory where steps are run
     working_directory: ~/Python
     docker: # run the steps with Docker
@@ -9,31 +11,65 @@ jobs: # A basic unit of work in a run
         environment: # environment variables for primary container
           PIPENV_VENV_IN_PROJECT: true
           DATABASE_URL: postgresql://root@localhost/circle_test?sslmode=disable
-    steps: # steps that comprise the `build` job
-      - checkout # check out source code to working directory
-      - run: sudo chown -R circleci:circleci /usr/local/bin
-      - run: sudo chown -R circleci:circleci /usr/local/lib/python3.6/site-packages
-      #- restore_cache:
-      # Read about caching dependencies: https://circleci.com/docs/2.0/caching/
-       #   key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+    steps:
+      - checkout
       - run:
           command: |
             sudo pip install pipenv
             pipenv install
-      #- save_cache: # cache Python dependencies using checksum of Pipfile as the cache-key
-          #key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+      - save_cache:
+          key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
           paths:
             - ".venv"
             - "/usr/local/bin"
             - "/usr/local/lib/python3.6/site-packages"
+  Test-MachineGroup:
+    docker:
+      - image: circleci/python:3.6.4
+        environment:
+          PIPENV_VENV_IN_PROJECT: true
+    steps:
+      - checkout
+      - run: sudo chown -R circleci:circleci /usr/local/bin
+      - run: sudo chown -R circleci:circleci /usr/local/lib/python3.6/site-packages
+      - run:
+          name: List Python Executable
+          command: |
+            ls -l /usr/local/bin
+      - restore_cache:
+          key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
       - run:
           command: |
             pipenv run python manage.py test
       - store_test_results: # Upload test results for display in Test Summary: https://circleci.com/docs/2.0/collect-test-data/
           path: test-results
-      - store_artifacts: # Upload test summary for display in Artifacts: https://circleci.com/docs/2.0/artifacts/
-          path: test-results
-          destination: tr1
       - store_artifacts:
           path: ./manage.py
           destination: artifact-fil
+  Package:
+    executor:
+      name: win/vs2019
+      shell: powershell.exe
+    environment:
+      FOO: "HackNet-Checker"    
+    steps:
+      - checkout
+      - run: Write-Host "Hello $TEST_VAR" # Prints "Hello "
+      - run: Write-Host "Hello $FOO" # Prints "Hello "
+      - run:
+          name: Write-Host
+          command: |
+            $BAS = "bas"
+            Write-Host "Hello $BAS" # Prints "Hello bas"
+workflows:
+  version: 2
+  BuildRelease:
+    jobs:
+      - SetUp-Python
+      - Test-MachineGroup:
+          requires:
+            - SetUp-Python
+      - Package:
+          requires:
+            - SetUp-Python
+            - Test-MachineGroup
